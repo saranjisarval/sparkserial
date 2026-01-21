@@ -1,9 +1,9 @@
 [project]
 name = "sparkserial"
-version = "0.1.0"
+version = "0.1.1"
 description = "A premium Serial Utility Tool for professional hardware testing."
 authors = [
-    { name = "Spark Electronics", email = "info@sparkelectronics.com" }
+    { name = "saravanakumar", email = "sarvalece72@gmail.com" }
 ]
 readme = "README.md"
 requires-python = ">=3.13"
