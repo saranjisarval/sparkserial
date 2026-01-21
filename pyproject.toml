@@ -1,0 +1,24 @@
+[project]
+name = "sparkserial"
+version = "0.1.0"
+description = "A premium Serial Utility Tool for professional hardware testing."
+authors = [
+    { name = "Spark Electronics", email = "info@sparkelectronics.com" }
+]
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "pyobjc-framework-cocoa>=12.1",
+    "pyqt6>=6.10.2",
+    "pyserial>=3.5",
+]
+
+[project.scripts]
+sparkserial = "sparkserial.main:main"
+
+[tool.setuptools]
+packages = ["sparkserial", "sparkserial.core", "sparkserial.gui"]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
