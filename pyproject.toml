@@ -12,12 +12,16 @@ dependencies = [
     "pyqt6>=6.10.2",
     "pyserial>=3.5",
 ]
+license = { text = "MIT" }
 
 [project.scripts]
 sparkserial = "sparkserial.main:main"
 
 [tool.setuptools]
 packages = ["sparkserial", "sparkserial.core", "sparkserial.gui"]
+
+[tool.setuptools.package-data]
+sparkserial = ["assets/*.png"]
 
 [build-system]
 requires = ["setuptools>=61.0"]

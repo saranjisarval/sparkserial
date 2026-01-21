@@ -17,7 +17,7 @@ def set_macos_app_details():
 
             # Set Dock Icon
             from AppKit import NSApp, NSImage
-            icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "icon.png")
+            icon_path = os.path.join(os.path.dirname(__file__), "assets", "icon.png")
             if os.path.exists(icon_path):
                 image = NSImage.alloc().initWithContentsOfFile_(icon_path)
                 if image:

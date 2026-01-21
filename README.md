@@ -2,7 +2,7 @@
 
 A premium serial communication and hardware testing tool built with Python and PyQt6. Inspired by professional tools like Docklight, **SparkSerial** provides a modern, high-performance interface for engineers and developers.
 
-![Icon](assets/icon.png)
+![Icon](sparkserial/assets/icon.png)
 
 ## Features
 
