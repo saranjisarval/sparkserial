@@ -3,15 +3,61 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QGridLayout, QGroupBox, QLabel, QComboBox, 
                              QPushButton, QPlainTextEdit, QLineEdit, QStatusBar,
                              QCheckBox, QSplitter, QListWidget, QListWidgetItem,
-                             QDialog, QFormLayout, QDialogButtonBox, QMessageBox)
-from PyQt6.QtCore import Qt, pyqtSlot
-from PyQt6.QtGui import QIcon, QTextCursor
+                             QDialog, QFormLayout, QDialogButtonBox, QMessageBox,
+                             QStyle, QStyleOptionButton)
+from PyQt6.QtCore import Qt, pyqtSlot, QRect
+from PyQt6.QtGui import QIcon, QTextCursor, QPainter, QPen, QColor
 import serial
 from sparkserial.core.serial_manager import SerialManager
 from sparkserial.core.command_manager import CommandManager
 from sparkserial.gui.styles import get_stylesheet
 import os
 import json
+
+class StyledCheckBox(QCheckBox):
+    """Custom checkbox that draws a proper checkmark."""
+    
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        
+        # Draw the checkbox indicator
+        indicator_size = 18
+        indicator_x = 0
+        indicator_y = (self.height() - indicator_size) // 2
+        indicator_rect = QRect(indicator_x, indicator_y, indicator_size, indicator_size)
+        
+        # Background and border
+        if self.isChecked():
+            painter.fillRect(indicator_rect, QColor("#007acc"))
+            painter.setPen(QPen(QColor("#007acc"), 2))
+        else:
+            painter.fillRect(indicator_rect, QColor("#252526"))
+            painter.setPen(QPen(QColor("#6e6e6e"), 2))
+        
+        painter.drawRoundedRect(indicator_rect, 3, 3)
+        
+        # Draw checkmark if checked
+        if self.isChecked():
+            pen = QPen(QColor("#ffffff"), 2)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(pen)
+            
+            # Checkmark path
+            x_offset = indicator_x + 4
+            y_offset = indicator_y + 4
+            painter.drawLine(x_offset, y_offset + 5, x_offset + 4, y_offset + 9)
+            painter.drawLine(x_offset + 4, y_offset + 9, x_offset + 10, y_offset + 1)
+        
+        # Draw text
+        text_x = indicator_size + 8
+        text_rect = QRect(text_x, 0, self.width() - text_x, self.height())
+        painter.setPen(QColor("#d4d4d4"))
+        painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, self.text())
+        
+        painter.end()
+
 
 class CommandDialog(QDialog):
     def __init__(self, parent=None, command_info=None):
@@ -32,7 +78,7 @@ class CommandDialog(QDialog):
         if command_info:
             self.command_input.setText(command_info.get('command', ''))
             
-        self.hex_check = QCheckBox("Send as Hex")
+        self.hex_check = StyledCheckBox("Send as Hex")
         if command_info:
             self.hex_check.setChecked(command_info.get('is_hex', False))
             
@@ -55,6 +101,39 @@ class CommandDialog(QDialog):
             "command": self.command_input.text().strip(),
             "is_hex": self.hex_check.isChecked()
         }
+
+class BulkReplaceDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Bulk Find & Replace")
+        self.setMinimumWidth(300)
+        self.apply_styles()
+        
+        layout = QVBoxLayout(self)
+        form_layout = QFormLayout()
+        
+        self.find_input = QLineEdit()
+        self.find_input.setPlaceholderText("Text to find...")
+        self.replace_input = QLineEdit()
+        self.replace_input.setPlaceholderText("Replacement text...")
+        
+        form_layout.addRow("Find:", self.find_input)
+        form_layout.addRow("Replace:", self.replace_input)
+        
+        layout.addLayout(form_layout)
+        
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def apply_styles(self):
+        self.setStyleSheet(get_stylesheet())
+
+    def get_data(self):
+        return self.find_input.text(), self.replace_input.text()
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -79,6 +158,9 @@ class MainWindow(QMainWindow):
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
         main_layout = QHBoxLayout(main_widget)
+
+        # Create Menu Bar
+        self.create_menu_bar()
 
         # Left Panel Tool Widget
         left_panel = QWidget()
@@ -130,7 +212,15 @@ class MainWindow(QMainWindow):
         config_grid.addWidget(QLabel("Flow:"), 3, 0)
         self.flow_combo = QComboBox()
         self.flow_combo.addItems(["None", "RTS/CTS", "XON/XOFF"])
-        config_grid.addWidget(self.flow_combo, 3, 1, 1, 3)
+        config_grid.addWidget(self.flow_combo, 3, 1)
+
+        # Line Ending (moved here from Send Command section)
+        config_grid.addWidget(QLabel("EOL:"), 3, 2)
+        self.line_ending_combo = QComboBox()
+        self.line_ending_combo.addItems(["None", "CR", "LF", "CR+LF"])
+        self.line_ending_combo.setCurrentText("CR+LF")
+        self.line_ending_combo.setToolTip("Line ending to append")
+        config_grid.addWidget(self.line_ending_combo, 3, 3)
 
         config_group.setLayout(config_grid)
         left_layout.addWidget(config_group)
@@ -150,6 +240,7 @@ class MainWindow(QMainWindow):
         self.commands_list = QListWidget()
         self.commands_list.itemDoubleClicked.connect(self.load_saved_command)
         saved_group_layout.addWidget(self.commands_list)
+
         
         cmd_btns = QHBoxLayout()
         add_cmd_btn = QPushButton("Add")
@@ -159,17 +250,23 @@ class MainWindow(QMainWindow):
         del_cmd_btn = QPushButton("Delete")
         del_cmd_btn.clicked.connect(self.delete_command)
         
+        bulk_replace_btn = QPushButton("Find/Replace")
+        bulk_replace_btn.setToolTip("Find and Replace in all commands")
+        bulk_replace_btn.clicked.connect(self.bulk_replace_dialog)
+
         # Consistent industry styling
-        for btn in [add_cmd_btn, edit_cmd_btn, del_cmd_btn]:
+        for btn in [add_cmd_btn, edit_cmd_btn, del_cmd_btn, bulk_replace_btn]:
             btn.setMinimumHeight(32)
         
         cmd_btns.addWidget(add_cmd_btn)
         cmd_btns.addWidget(edit_cmd_btn)
         cmd_btns.addWidget(del_cmd_btn)
+        cmd_btns.addWidget(bulk_replace_btn)
         saved_group_layout.addLayout(cmd_btns)
         
         saved_group.setLayout(saved_group_layout)
         left_layout.addWidget(saved_group)
+
 
         # Right Panel: Terminal and Tools
         right_panel = QWidget()
@@ -177,11 +274,11 @@ class MainWindow(QMainWindow):
 
         # Terminal Settings
         term_settings = QHBoxLayout()
-        self.autoscroll_check = QCheckBox("Autoscroll")
+        self.autoscroll_check = StyledCheckBox("Autoscroll")
         self.autoscroll_check.setChecked(True)
-        self.hex_view_check = QCheckBox("Hex View")
-        self.timestamp_check = QCheckBox("Timestamps")
-        self.logging_check = QCheckBox("Log to File")
+        self.hex_view_check = StyledCheckBox("Hex View")
+        self.timestamp_check = StyledCheckBox("Timestamps")
+        self.logging_check = StyledCheckBox("Log to File")
         self.logging_check.toggled.connect(self.toggle_logging)
         
         clear_btn = QPushButton("Clear")
@@ -206,26 +303,31 @@ class MainWindow(QMainWindow):
         input_layout = QVBoxLayout()
         
         send_row = QHBoxLayout()
-        self.command_input = QLineEdit()
-        self.command_input.setPlaceholderText("Enter command...")
-        self.command_input.returnPressed.connect(self.send_command)
-        
-        self.line_ending_combo = QComboBox()
-        self.line_ending_combo.addItems(["None", "CR", "LF", "CR+LF"])
-        self.line_ending_combo.setCurrentText("CR+LF")
+        self.command_input = QComboBox()
+        self.command_input.setEditable(True)
+        self.command_input.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)  # We handle history manually
+        self.command_input.lineEdit().setPlaceholderText("Enter command... (↑/↓ for history)")
+        self.command_input.setMinimumHeight(32)
+        self.command_input.setSizePolicy(self.command_input.sizePolicy().horizontalPolicy(), self.command_input.sizePolicy().verticalPolicy())
+        # Connect returnPressed from the lineEdit internal widget
+        self.command_input.lineEdit().returnPressed.connect(self.send_command)
+        # Install event filter for Up/Down arrow key handling
+        self.command_input.lineEdit().installEventFilter(self)
+        self.command_history = []  # List to store command history
+        self.history_index = -1  # Current position in history
         
         send_btn = QPushButton("Send")
+        send_btn.setFixedWidth(60)
         send_btn.clicked.connect(self.send_command)
         
-        send_row.addWidget(self.command_input)
-        send_row.addWidget(self.line_ending_combo)
+        send_row.addWidget(self.command_input, 1)  # Stretch factor 1 for command input
         send_row.addWidget(send_btn)
         
         input_layout.addLayout(send_row)
         
         options_row = QHBoxLayout()
-        self.send_hex_check = QCheckBox("Send as Hex")
-        self.log_sent_check = QCheckBox("Log Sent")
+        self.send_hex_check = StyledCheckBox("Send as Hex")
+        self.log_sent_check = StyledCheckBox("Log Sent")
         self.log_sent_check.setChecked(True)
         options_row.addWidget(self.send_hex_check)
         options_row.addWidget(self.log_sent_check)
@@ -253,8 +355,206 @@ class MainWindow(QMainWindow):
         self.log_file = None
         self.log_path = None
 
+    def create_menu_bar(self):
+        """Create the application menu bar."""
+        from PyQt6.QtGui import QAction
+        from PyQt6.QtWidgets import QFileDialog
+        
+        menubar = self.menuBar()
+        
+        # File Menu
+        file_menu = menubar.addMenu("File")
+        
+        import_action = QAction("Import Commands...", self)
+        import_action.setShortcut("Ctrl+O")
+        import_action.triggered.connect(self.import_commands)
+        file_menu.addAction(import_action)
+        
+        export_action = QAction("Export Commands...", self)
+        export_action.setShortcut("Ctrl+S")
+        export_action.triggered.connect(self.export_commands)
+        file_menu.addAction(export_action)
+        
+        file_menu.addSeparator()
+        
+        set_location_action = QAction("Set Commands File Location...", self)
+        set_location_action.triggered.connect(self.set_commands_location)
+        file_menu.addAction(set_location_action)
+        
+        file_menu.addSeparator()
+        
+        show_location_action = QAction("Show Current Location", self)
+        show_location_action.triggered.connect(self.show_commands_location)
+        file_menu.addAction(show_location_action)
+        
+        # Help Menu
+        help_menu = menubar.addMenu("Help")
+        
+        about_action = QAction("About SparkSerial", self)
+        about_action.triggered.connect(self.show_about)
+        help_menu.addAction(about_action)
+
+    def import_commands(self):
+        """Import commands from an external JSON file."""
+        from PyQt6.QtWidgets import QFileDialog
+        
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import Commands",
+            os.path.expanduser("~"),
+            "JSON Files (*.json);;All Files (*)"
+        )
+        
+        if file_path:
+            try:
+                with open(file_path, 'r') as f:
+                    imported_commands = json.load(f)
+                
+                if not isinstance(imported_commands, list):
+                    raise ValueError("Invalid format: expected a list of commands")
+                
+                # Ask if user wants to replace or merge
+                reply = QMessageBox.question(
+                    self,
+                    "Import Mode",
+                    "Do you want to replace existing commands?\n\n"
+                    "Yes = Replace all commands\n"
+                    "No = Merge with existing commands",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel
+                )
+                
+                if reply == QMessageBox.StandardButton.Cancel:
+                    return
+                
+                if reply == QMessageBox.StandardButton.Yes:
+                    self.command_manager.commands = imported_commands
+                else:
+                    # Merge - add only commands that don't already exist
+                    existing_names = {cmd['name'] for cmd in self.command_manager.commands}
+                    for cmd in imported_commands:
+                        if cmd['name'] not in existing_names:
+                            self.command_manager.commands.append(cmd)
+                
+                self.command_manager.save_commands()
+                self.refresh_commands_list()
+                self.status_bar.showMessage(f"Imported commands from {os.path.basename(file_path)}")
+                
+            except Exception as e:
+                QMessageBox.critical(self, "Import Error", f"Failed to import commands:\n{str(e)}")
+
+    def export_commands(self):
+        """Export commands to a JSON file for sharing."""
+        from PyQt6.QtWidgets import QFileDialog
+        
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Commands",
+            os.path.join(os.path.expanduser("~"), "sparkserial_commands.json"),
+            "JSON Files (*.json);;All Files (*)"
+        )
+        
+        if file_path:
+            try:
+                with open(file_path, 'w') as f:
+                    json.dump(self.command_manager.commands, f, indent=4)
+                self.status_bar.showMessage(f"Exported commands to {os.path.basename(file_path)}")
+                QMessageBox.information(self, "Export Complete", f"Commands exported to:\n{file_path}")
+            except Exception as e:
+                QMessageBox.critical(self, "Export Error", f"Failed to export commands:\n{str(e)}")
+
+    def set_commands_location(self):
+        """Allow user to set a custom location for the commands file."""
+        from PyQt6.QtWidgets import QFileDialog
+        
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Set Commands File Location",
+            self.command_manager.filename,
+            "JSON Files (*.json);;All Files (*)"
+        )
+        
+        if file_path:
+            try:
+                # Copy current commands to new location
+                with open(file_path, 'w') as f:
+                    json.dump(self.command_manager.commands, f, indent=4)
+                
+                # Save the custom path preference
+                config_file = os.path.join(self.command_manager.app_data_dir, "config.json")
+                config = {}
+                if os.path.exists(config_file):
+                    with open(config_file, 'r') as f:
+                        config = json.load(f)
+                
+                config['commands_file'] = file_path
+                with open(config_file, 'w') as f:
+                    json.dump(config, f, indent=4)
+                
+                # Update the command manager to use new location
+                self.command_manager.filename = file_path
+                
+                self.status_bar.showMessage(f"Commands location set to: {file_path}")
+                QMessageBox.information(
+                    self, 
+                    "Location Updated", 
+                    f"Commands will now be saved to:\n{file_path}\n\n"
+                    "This setting will persist across sessions."
+                )
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to set location:\n{str(e)}")
+
+    def show_commands_location(self):
+        """Show the current location of the commands file."""
+        location = self.command_manager.filename
+        QMessageBox.information(
+            self,
+            "Commands File Location",
+            f"Commands are currently saved at:\n\n{location}"
+        )
+
+    def show_about(self):
+        """Show the About dialog with version and author information."""
+        about_text = """
+        <h2>SparkSerial Pro</h2>
+        <p><b>Version:</b> 0.2.0</p>
+        <p><b>Author:</b> Saravanakumar</p>
+        <p><b>Email:</b> sarvalece71@gmail.com</p>
+        <hr>
+        <p>A lightweight Serial GUI Tool for hardware testing and debugging.</p>
+        <p><b>Note:</b> This tool requires USB-to-Serial drivers to be installed 
+        separately based on your adapter (FTDI, CH340, CP210x, PL2303, etc.).</p>
+        <hr>
+        <p><b>Technologies:</b> PyQt6, PySerial</p>
+        <p><b>License:</b> MIT</p>
+        """
+        QMessageBox.about(self, "About SparkSerial Pro", about_text)
+
     def apply_styles(self):
         self.setStyleSheet(get_stylesheet())
+
+    def eventFilter(self, obj, event):
+        """Handle Up/Down arrow keys for command history navigation."""
+        from PyQt6.QtCore import QEvent
+        
+        if obj == self.command_input.lineEdit() and event.type() == QEvent.Type.KeyPress:
+            key = event.key()
+            if key == Qt.Key.Key_Up:
+                # Navigate up in history (older commands)
+                if self.command_history and self.history_index < len(self.command_history) - 1:
+                    self.history_index += 1
+                    self.command_input.setCurrentText(self.command_history[self.history_index])
+                return True  # Event handled
+            elif key == Qt.Key.Key_Down:
+                # Navigate down in history (newer commands)
+                if self.history_index > 0:
+                    self.history_index -= 1
+                    self.command_input.setCurrentText(self.command_history[self.history_index])
+                elif self.history_index == 0:
+                    self.history_index = -1
+                    self.command_input.setCurrentText("")
+                return True  # Event handled
+        
+        return super().eventFilter(obj, event)
 
     def refresh_ports(self):
         current_port = self.port_combo.currentText()
@@ -263,6 +563,7 @@ class MainWindow(QMainWindow):
         self.port_combo.addItems(ports)
         if current_port in ports:
             self.port_combo.setCurrentText(current_port)
+
 
     def toggle_connection(self):
         if self.current_worker:
@@ -399,9 +700,25 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage("Error: Not connected")
             return
 
-        command = self.command_input.text()
+        command = self.command_input.currentText().strip()
         if not command:
             return
+
+        # Add to history (avoid duplicates at top)
+        if command in self.command_history:
+            self.command_history.remove(command)
+        self.command_history.insert(0, command)
+        # Limit history size
+        if len(self.command_history) > 50:
+            self.command_history = self.command_history[:50]
+        
+        # Also update the dropdown for visual feedback
+        self.command_input.clear()
+        self.command_input.addItems(self.command_history)
+        
+        # Reset history navigation and clear input
+        self.history_index = -1
+        self.command_input.setCurrentText("")
 
         try:
             if self.send_hex_check.isChecked():
@@ -434,7 +751,7 @@ class MainWindow(QMainWindow):
                 self.log_file.flush()
                 self._log_at_newline = True
 
-            self.command_input.clear()
+            # Input is already cleared above
         except Exception as e:
             self.status_bar.showMessage(f"Send Error: {str(e)}")
 
@@ -450,6 +767,17 @@ class MainWindow(QMainWindow):
             tooltip = f"Command: {cmd['command']}\nType: {'Hex' if cmd['is_hex'] else 'Text'}"
             item.setToolTip(tooltip)
             self.commands_list.addItem(item)
+    
+    def bulk_replace_dialog(self):
+        dialog = BulkReplaceDialog(self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            find_text, replace_text = dialog.get_data()
+            if find_text:
+                count = self.command_manager.bulk_replace(find_text, replace_text)
+                self.refresh_commands_list()
+                QMessageBox.information(self, "Replace Complete", f"Updated {count} commands.")
+            else:
+                QMessageBox.warning(self, "Invalid Input", "Find text cannot be empty.")
 
     def add_command_dialog(self):
         dialog = CommandDialog(self)
@@ -493,7 +821,7 @@ class MainWindow(QMainWindow):
     def load_saved_command(self, item):
         index = self.commands_list.row(item)
         cmd_info = self.command_manager.get_commands()[index]
-        self.command_input.setText(cmd_info['command'])
+        self.command_input.setCurrentText(cmd_info['command'])
         self.send_hex_check.setChecked(cmd_info['is_hex'])
 
 if __name__ == "__main__":

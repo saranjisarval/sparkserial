@@ -1,18 +1,33 @@
 [project]
 name = "sparkserial"
-version = "0.1.1"
-description = "A premium Serial Utility Tool for professional hardware testing."
+version = "0.2.0"
+description = "A lightweight Serial GUI Tool for hardware testing and debugging. Requires USB-to-Serial driver installation based on your adapter."
 authors = [
-    { name = "saravanakumar", email = "sarvalece72@gmail.com" }
+    { name = "saravanakumar", email = "sarvalece71@gmail.com" }
 ]
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 dependencies = [
-    "pyobjc-framework-cocoa>=12.1",
-    "pyqt6>=6.10.2",
+    "pyqt6>=6.4.0",
     "pyserial>=3.5",
 ]
-license = { text = "MIT" }
+license = "MIT"
+keywords = ["serial", "uart", "terminal", "hardware", "debugging", "pyqt6", "gui"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Terminals :: Serial",
+]
+
+[project.optional-dependencies]
+macos = ["pyobjc-framework-cocoa>=9.0"]
 
 [project.scripts]
 sparkserial = "sparkserial.main:main"
