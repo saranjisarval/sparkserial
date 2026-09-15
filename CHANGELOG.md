@@ -11,6 +11,8 @@ of the release process. See `.claude/skills/pypi-release/SKILL.md`.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-15
+
 ### Fixed
 - Command history Up/Down arrow navigation could get hijacked by Qt's native combo-box
   item cycling (reversing "previous"/"next" direction) depending on how the input field

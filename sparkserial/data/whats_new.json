@@ -2,5 +2,10 @@
     "0.2.1": [
         "Added a built-in Base Converter tool (Decimal / Hex / Binary / ASCII) under Tools",
         "Improved Windows install instructions when the sparkserial command isn't on PATH"
+    ],
+    "0.3.0": [
+        "Fixed Up/Down arrow keys sometimes navigating command history backwards",
+        "Command Shortcuts can now be organized into categories for easier access",
+        "Open multiple windows (File > New Window) to work with different serial devices at once"
     ]
 }

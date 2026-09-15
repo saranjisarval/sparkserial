@@ -1,6 +1,6 @@
 [project]
 name = "sparkserial"
-version = "0.2.1"
+version = "0.3.0"
 description = "A lightweight Serial GUI Tool for hardware testing and debugging. Requires USB-to-Serial driver installation based on your adapter."
 authors = [
     { name = "saravanakumar", email = "sarvalece71@gmail.com" }
@@ -39,10 +39,11 @@ dev = [
 sparkserial = "sparkserial.main:main"
 
 [tool.setuptools]
-packages = ["sparkserial", "sparkserial.core", "sparkserial.gui"]
+packages = ["sparkserial", "sparkserial.core", "sparkserial.gui", "sparkserial.assets", "sparkserial.data"]
 
 [tool.setuptools.package-data]
-sparkserial = ["assets/*.png", "data/*.json"]
+"sparkserial.assets" = ["*.png"]
+"sparkserial.data" = ["*.json"]
 
 [build-system]
 requires = ["setuptools>=61.0"]
