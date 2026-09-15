@@ -146,7 +146,7 @@ def get_stylesheet():
         height: 0px;
     }
 
-    QListWidget {
+    QListWidget, QTreeWidget {
         background-color: #252526;
         border: 1px solid #3c3c3c;
         border-radius: 4px;
@@ -155,19 +155,23 @@ def get_stylesheet():
         outline: none;
     }
 
-    QListWidget::item {
+    QListWidget::item, QTreeWidget::item {
         padding: 5px;
         border-bottom: 1px solid #3c3c3c;
     }
 
-    QListWidget::item:selected {
+    QListWidget::item:selected, QTreeWidget::item:selected {
         background-color: #04395e;
         color: #ffffff;
         border-radius: 3px;
     }
 
-    QListWidget::item:hover {
+    QListWidget::item:hover, QTreeWidget::item:hover {
         background-color: #2a2d2e;
+    }
+
+    QTreeWidget::branch {
+        background-color: #252526;
     }
 
     QDialog {

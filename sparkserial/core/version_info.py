@@ -53,6 +53,17 @@ def get_last_seen_version():
     return _load_config().get(LAST_SEEN_VERSION_KEY)
 
 
+def _has_prior_install():
+    """True if there's evidence sparkserial was used before this launch (e.g. a saved
+    commands file), even though last_seen_version was never recorded. That file is
+    written unconditionally on first run by CommandManager, well before this
+    version-tracking feature existed, so its presence is what tells an existing user
+    upgrading into the first version with this feature apart from someone installing
+    sparkserial for the very first time."""
+    saved_commands_path = os.path.join(APP_DATA_DIR, "saved_commands.json")
+    return os.path.exists(saved_commands_path) or os.path.exists(CONFIG_FILE)
+
+
 def set_last_seen_version(version_str):
     # Read-modify-write: config.json also holds unrelated keys (e.g. CommandManager's
     # custom commands_file path), so we must not clobber them.
@@ -80,10 +91,16 @@ def get_unseen_release_notes():
     current_tuple = _parse_version(current)
 
     if last_seen is None:
-        # First-ever launch: nothing to announce, just start tracking from here.
-        return []
+        if not _has_prior_install():
+            # Genuinely brand new install: nothing to announce, just start tracking from here.
+            return []
+        # An existing user upgrading into the first version that has this feature at all —
+        # we don't know what they've already seen, so show everything released up to what
+        # they now have installed rather than silently skipping the announcement.
+        last_seen_tuple = (0,)
+    else:
+        last_seen_tuple = _parse_version(last_seen)
 
-    last_seen_tuple = _parse_version(last_seen)
     all_notes = load_whats_new()
 
     unseen = [
