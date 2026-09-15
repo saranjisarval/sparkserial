@@ -56,11 +56,20 @@ class CommandManager:
         if not self.commands:
             # Default sample commands
             self.commands = [
-                {"name": "Check Connection", "command": "AT", "is_hex": False},
-                {"name": "Get Device Info", "command": "ATI", "is_hex": False},
-                {"name": "Reset Device", "command": "ATZ", "is_hex": False}
+                {"name": "Check Connection", "command": "AT", "is_hex": False, "category": "General"},
+                {"name": "Get Device Info", "command": "ATI", "is_hex": False, "category": "General"},
+                {"name": "Reset Device", "command": "ATZ", "is_hex": False, "category": "General"}
             ]
             self.save_commands()
+        else:
+            # Migrate older saved commands that don't have a category yet
+            migrated = False
+            for cmd in self.commands:
+                if "category" not in cmd or not cmd["category"]:
+                    cmd["category"] = "General"
+                    migrated = True
+            if migrated:
+                self.save_commands()
 
     def save_commands(self):
         try:
@@ -69,20 +78,22 @@ class CommandManager:
         except Exception as e:
             print(f"Error saving commands: {e}")
 
-    def add_command(self, name, command, is_hex=False):
+    def add_command(self, name, command, is_hex=False, category="General"):
         self.commands.append({
             "name": name,
             "command": command,
-            "is_hex": is_hex
+            "is_hex": is_hex,
+            "category": category.strip() if category and category.strip() else "General"
         })
         self.save_commands()
 
-    def update_command(self, index, name, command, is_hex=False):
+    def update_command(self, index, name, command, is_hex=False, category="General"):
         if 0 <= index < len(self.commands):
             self.commands[index] = {
                 "name": name,
                 "command": command,
-                "is_hex": is_hex
+                "is_hex": is_hex,
+                "category": category.strip() if category and category.strip() else "General"
             }
             self.save_commands()
 
@@ -93,6 +104,11 @@ class CommandManager:
 
     def get_commands(self):
         return self.commands
+
+    def get_categories(self):
+        """Returns a sorted list of unique categories currently in use."""
+        categories = {cmd.get("category", "General") for cmd in self.commands}
+        return sorted(categories)
 
     def bulk_replace(self, find_text, replace_text):
         """

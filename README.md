@@ -24,6 +24,7 @@ After installing the driver, your serial port should appear in the Port dropdown
 - **Command History**: Use ↑/↓ arrow keys to navigate through previously sent commands.
 - **Advanced Terminal**: Real-time logging with timestamps, Hex view, and autoscroll.
 - **Persistence**: Automatically saves your command library.
+- **Base Converter**: Built-in tool to convert between Decimal, Hex, Binary, and ASCII instantly.
 - **Modern UI**: Industry-standard dark-mode aesthetic optimized for hardware debugging.
 - **Cross-Platform**: Designed for macOS, Windows, and Linux.
 
@@ -49,6 +50,17 @@ After installing via pip, you can launch the tool directly:
 sparkserial
 ```
 
+### Windows Users
+If you get a "command not found" error, it likely means your Python Scripts directory is not in your PATH. You can run the tool using:
+```bash
+python -m sparkserial
+```
+
+Or for a robust installation that handles PATH automatically, use [pipx](https://github.com/pypa/pipx):
+```bash
+pipx install sparkserial
+```
+
 ## System Requirements
 
 - **Python**: 3.11 or higher
@@ -64,7 +76,7 @@ sparkserial
 
 ## Version
 
-Current version: **0.2.0**
+Current version: **0.2.1**
 
 ## Author
 

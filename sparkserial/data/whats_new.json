@@ -1,0 +1,6 @@
+{
+    "0.2.1": [
+        "Added a built-in Base Converter tool (Decimal / Hex / Binary / ASCII) under Tools",
+        "Improved Windows install instructions when the sparkserial command isn't on PATH"
+    ]
+}

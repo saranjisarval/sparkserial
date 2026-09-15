@@ -1,6 +1,6 @@
 [project]
 name = "sparkserial"
-version = "0.2.0"
+version = "0.2.1"
 description = "A lightweight Serial GUI Tool for hardware testing and debugging. Requires USB-to-Serial driver installation based on your adapter."
 authors = [
     { name = "saravanakumar", email = "sarvalece71@gmail.com" }
@@ -29,6 +29,12 @@ classifiers = [
 [project.optional-dependencies]
 macos = ["pyobjc-framework-cocoa>=9.0"]
 
+[dependency-groups]
+dev = [
+    "build>=1.0",
+    "twine>=5.0",
+]
+
 [project.scripts]
 sparkserial = "sparkserial.main:main"
 
@@ -36,7 +42,7 @@ sparkserial = "sparkserial.main:main"
 packages = ["sparkserial", "sparkserial.core", "sparkserial.gui"]
 
 [tool.setuptools.package-data]
-sparkserial = ["assets/*.png"]
+sparkserial = ["assets/*.png", "data/*.json"]
 
 [build-system]
 requires = ["setuptools>=61.0"]

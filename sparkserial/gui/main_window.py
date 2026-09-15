@@ -1,8 +1,8 @@
 import sys
-from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-                             QGridLayout, QGroupBox, QLabel, QComboBox, 
+from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+                             QGridLayout, QGroupBox, QLabel, QComboBox,
                              QPushButton, QPlainTextEdit, QLineEdit, QStatusBar,
-                             QCheckBox, QSplitter, QListWidget, QListWidgetItem,
+                             QCheckBox, QSplitter, QTreeWidget, QTreeWidgetItem,
                              QDialog, QFormLayout, QDialogButtonBox, QMessageBox,
                              QStyle, QStyleOptionButton)
 from PyQt6.QtCore import Qt, pyqtSlot, QRect
@@ -11,6 +11,7 @@ import serial
 from sparkserial.core.serial_manager import SerialManager
 from sparkserial.core.command_manager import CommandManager
 from sparkserial.gui.styles import get_stylesheet
+from sparkserial.gui.converter_dialog import ConverterDialog
 import os
 import json
 
@@ -60,34 +61,46 @@ class StyledCheckBox(QCheckBox):
 
 
 class CommandDialog(QDialog):
-    def __init__(self, parent=None, command_info=None):
+    def __init__(self, parent=None, command_info=None, categories=None):
         super().__init__(parent)
         self.setWindowTitle("Add Command" if not command_info else "Edit Command")
         self.setMinimumWidth(400)
-        
+
         layout = QVBoxLayout(self)
         form_layout = QFormLayout()
-        
+
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("e.g., Get Version")
         if command_info:
             self.name_input.setText(command_info.get('name', ''))
-            
+
         self.command_input = QLineEdit()
         self.command_input.setPlaceholderText("e.g., AT+VER")
         if command_info:
             self.command_input.setText(command_info.get('command', ''))
-            
+
         self.hex_check = StyledCheckBox("Send as Hex")
         if command_info:
             self.hex_check.setChecked(command_info.get('is_hex', False))
-            
+
+        self.category_input = QComboBox()
+        self.category_input.setEditable(True)
+        self.category_input.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.category_input.lineEdit().setPlaceholderText("e.g., Power, Diagnostics")
+        for cat in (categories or []):
+            self.category_input.addItem(cat)
+        if command_info:
+            self.category_input.setCurrentText(command_info.get('category', 'General'))
+        else:
+            self.category_input.setCurrentText("General")
+
         form_layout.addRow("Name:", self.name_input)
         form_layout.addRow("Command:", self.command_input)
+        form_layout.addRow("Category:", self.category_input)
         form_layout.addRow("", self.hex_check)
-        
+
         layout.addLayout(form_layout)
-        
+
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
@@ -99,7 +112,8 @@ class CommandDialog(QDialog):
         return {
             "name": self.name_input.text().strip(),
             "command": self.command_input.text().strip(),
-            "is_hex": self.hex_check.isChecked()
+            "is_hex": self.hex_check.isChecked(),
+            "category": self.category_input.currentText().strip() or "General"
         }
 
 class BulkReplaceDialog(QDialog):
@@ -134,6 +148,10 @@ class BulkReplaceDialog(QDialog):
 
     def get_data(self):
         return self.find_input.text(), self.replace_input.text()
+
+# Keeps strong references to every open MainWindow so PyQt doesn't garbage-collect
+# a window that has no other Python reference (e.g. one opened via "New Window").
+_open_windows = []
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -237,7 +255,9 @@ class MainWindow(QMainWindow):
         saved_group_layout = QVBoxLayout()
         saved_group_layout.setContentsMargins(10, 15, 10, 10)
         
-        self.commands_list = QListWidget()
+        self.commands_list = QTreeWidget()
+        self.commands_list.setHeaderHidden(True)
+        self.commands_list.setIndentation(14)
         self.commands_list.itemDoubleClicked.connect(self.load_saved_command)
         saved_group_layout.addWidget(self.commands_list)
 
@@ -306,12 +326,21 @@ class MainWindow(QMainWindow):
         self.command_input = QComboBox()
         self.command_input.setEditable(True)
         self.command_input.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)  # We handle history manually
+        # Disable the built-in autocomplete popup: its popup steals Up/Down key events
+        # (for navigating suggestions) before they can reach our history-navigation filter.
+        self.command_input.setCompleter(None)
         self.command_input.lineEdit().setPlaceholderText("Enter command... (↑/↓ for history)")
         self.command_input.setMinimumHeight(32)
         self.command_input.setSizePolicy(self.command_input.sizePolicy().horizontalPolicy(), self.command_input.sizePolicy().verticalPolicy())
         # Connect returnPressed from the lineEdit internal widget
         self.command_input.lineEdit().returnPressed.connect(self.send_command)
-        # Install event filter for Up/Down arrow key handling
+        # Install event filter for Up/Down arrow key handling.
+        # Installed on both the combo box and its line edit: depending on how
+        # focus lands (click vs. tab), key events can arrive addressed to
+        # either widget, and if we only watch the line edit, events delivered
+        # to the combo box itself fall through to Qt's native item-cycling
+        # behavior instead of our history navigation.
+        self.command_input.installEventFilter(self)
         self.command_input.lineEdit().installEventFilter(self)
         self.command_history = []  # List to store command history
         self.history_index = -1  # Current position in history
@@ -364,7 +393,15 @@ class MainWindow(QMainWindow):
         
         # File Menu
         file_menu = menubar.addMenu("File")
-        
+
+        new_window_action = QAction("New Window", self)
+        new_window_action.setShortcut("Ctrl+N")
+        new_window_action.setToolTip("Open another independent window to work with a different serial device")
+        new_window_action.triggered.connect(self.open_new_window)
+        file_menu.addAction(new_window_action)
+
+        file_menu.addSeparator()
+
         import_action = QAction("Import Commands...", self)
         import_action.setShortcut("Ctrl+O")
         import_action.triggered.connect(self.import_commands)
@@ -387,12 +424,36 @@ class MainWindow(QMainWindow):
         show_location_action.triggered.connect(self.show_commands_location)
         file_menu.addAction(show_location_action)
         
+        # Tools Menu
+        tools_menu = menubar.addMenu("Tools")
+        
+        converter_action = QAction("Base Converter", self)
+        converter_action.setShortcut("Ctrl+T")
+        converter_action.triggered.connect(self.show_converter)
+        tools_menu.addAction(converter_action)
+        
         # Help Menu
         help_menu = menubar.addMenu("Help")
         
         about_action = QAction("About SparkSerial", self)
         about_action.triggered.connect(self.show_about)
         help_menu.addAction(about_action)
+
+    def open_new_window(self):
+        """Open another independent SparkSerial window with its own connection,
+        so different serial devices can be managed side by side."""
+        new_window = MainWindow()
+        _open_windows.append(new_window)
+        new_window.show()
+
+    def closeEvent(self, event):
+        if self.current_worker:
+            self.disconnect_serial()
+        if self.log_file:
+            self.log_file.close()
+        if self in _open_windows:
+            _open_windows.remove(self)
+        super().closeEvent(event)
 
     def import_commands(self):
         """Import commands from an external JSON file."""
@@ -512,11 +573,16 @@ class MainWindow(QMainWindow):
             f"Commands are currently saved at:\n\n{location}"
         )
 
+    def show_converter(self):
+        """Show the Base Converter dialog."""
+        dialog = ConverterDialog(self)
+        dialog.exec()
+
     def show_about(self):
         """Show the About dialog with version and author information."""
         about_text = """
         <h2>SparkSerial Pro</h2>
-        <p><b>Version:</b> 0.2.0</p>
+        <p><b>Version:</b> 0.2.1</p>
         <p><b>Author:</b> Saravanakumar</p>
         <p><b>Email:</b> sarvalece71@gmail.com</p>
         <hr>
@@ -536,8 +602,10 @@ class MainWindow(QMainWindow):
         """Handle Up/Down arrow keys for command history navigation."""
         from PyQt6.QtCore import QEvent
         
-        if obj == self.command_input.lineEdit() and event.type() == QEvent.Type.KeyPress:
+        if obj in (self.command_input, self.command_input.lineEdit()) and event.type() == QEvent.Type.KeyPress:
             key = event.key()
+            if key in (Qt.Key.Key_Up, Qt.Key.Key_Down) and self.command_input.view().isVisible():
+                self.command_input.hidePopup()
             if key == Qt.Key.Key_Up:
                 # Navigate up in history (older commands)
                 if self.command_history and self.history_index < len(self.command_history) - 1:
@@ -761,13 +829,39 @@ class MainWindow(QMainWindow):
     # Saved Commands Methods
     def refresh_commands_list(self):
         self.commands_list.clear()
-        for cmd in self.command_manager.get_commands():
+        category_nodes = {}
+
+        for index, cmd in enumerate(self.command_manager.get_commands()):
+            category = cmd.get('category', 'General') or 'General'
+
+            category_item = category_nodes.get(category)
+            if category_item is None:
+                category_item = QTreeWidgetItem([category])
+                font = category_item.font(0)
+                font.setBold(True)
+                category_item.setFont(0, font)
+                # Category headers are not selectable/draggable, just expandable containers
+                category_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                self.commands_list.addTopLevelItem(category_item)
+                category_nodes[category] = category_item
+
             display_text = f"{cmd['name']} : {cmd['command']}"
-            item = QListWidgetItem(display_text)
-            tooltip = f"Command: {cmd['command']}\nType: {'Hex' if cmd['is_hex'] else 'Text'}"
-            item.setToolTip(tooltip)
-            self.commands_list.addItem(item)
-    
+            item = QTreeWidgetItem([display_text])
+            tooltip = f"Command: {cmd['command']}\nType: {'Hex' if cmd['is_hex'] else 'Text'}\nCategory: {category}"
+            item.setToolTip(0, tooltip)
+            item.setData(0, Qt.ItemDataRole.UserRole, index)
+            category_item.addChild(item)
+
+        self.commands_list.expandAll()
+
+    def _selected_command_index(self):
+        """Returns the command_manager index for the currently selected leaf item, or -1 if none/category selected."""
+        item = self.commands_list.currentItem()
+        if item is None:
+            return -1
+        data = item.data(0, Qt.ItemDataRole.UserRole)
+        return data if data is not None else -1
+
     def bulk_replace_dialog(self):
         dialog = BulkReplaceDialog(self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
@@ -780,47 +874,51 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "Invalid Input", "Find text cannot be empty.")
 
     def add_command_dialog(self):
-        dialog = CommandDialog(self)
+        dialog = CommandDialog(self, categories=self.command_manager.get_categories())
         if dialog.exec() == QDialog.DialogCode.Accepted:
             data = dialog.get_data()
             if data['name'] and data['command']:
-                self.command_manager.add_command(data['name'], data['command'], data['is_hex'])
+                self.command_manager.add_command(data['name'], data['command'], data['is_hex'], data['category'])
                 self.refresh_commands_list()
             else:
                 QMessageBox.warning(self, "Invalid Input", "Name and Command cannot be empty.")
 
     def edit_command_dialog(self):
-        index = self.commands_list.currentRow()
+        index = self._selected_command_index()
         if index < 0:
             QMessageBox.information(self, "Selection Required", "Please select a command to edit.")
             return
-            
+
         cmd_info = self.command_manager.get_commands()[index]
-        dialog = CommandDialog(self, cmd_info)
+        dialog = CommandDialog(self, cmd_info, categories=self.command_manager.get_categories())
         if dialog.exec() == QDialog.DialogCode.Accepted:
             data = dialog.get_data()
             if data['name'] and data['command']:
-                self.command_manager.update_command(index, data['name'], data['command'], data['is_hex'])
+                self.command_manager.update_command(index, data['name'], data['command'], data['is_hex'], data['category'])
                 self.refresh_commands_list()
 
     def delete_command(self):
-        index = self.commands_list.currentRow()
+        index = self._selected_command_index()
         if index < 0:
+            QMessageBox.information(self, "Selection Required", "Please select a command to delete.")
             return
-            
+
         confirm = QMessageBox.question(
-            self, "Confirm Delete", 
+            self, "Confirm Delete",
             f"Are you sure you want to delete '{self.command_manager.get_commands()[index]['name']}'?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
-        
+
         if confirm == QMessageBox.StandardButton.Yes:
             self.command_manager.delete_command(index)
             self.refresh_commands_list()
 
-    def load_saved_command(self, item):
-        index = self.commands_list.row(item)
-        cmd_info = self.command_manager.get_commands()[index]
+    def load_saved_command(self, item, column=0):
+        data = item.data(0, Qt.ItemDataRole.UserRole)
+        if data is None:
+            # Double-clicked a category header, not an actual command
+            return
+        cmd_info = self.command_manager.get_commands()[data]
         self.command_input.setCurrentText(cmd_info['command'])
         self.send_hex_check.setChecked(cmd_info['is_hex'])
 
