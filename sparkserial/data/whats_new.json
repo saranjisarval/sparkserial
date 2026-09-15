@@ -7,5 +7,8 @@
         "Fixed Up/Down arrow keys sometimes navigating command history backwards",
         "Command Shortcuts can now be organized into categories for easier access",
         "Open multiple windows (File > New Window) to work with different serial devices at once"
+    ],
+    "0.3.1": [
+        "Fixed the Saved Commands panel showing a white background instead of the dark theme"
     ]
 }

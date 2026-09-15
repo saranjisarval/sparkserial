@@ -76,7 +76,7 @@ pipx install sparkserial
 
 ## Version
 
-Current version: **0.3.0**
+Current version: **0.3.1**
 
 ## Author
 

@@ -11,6 +11,17 @@ of the release process. See `.claude/skills/pypi-release/SKILL.md`.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-15
+
+### Fixed
+- The Saved Commands panel showed a white background instead of the app's dark theme —
+  the stylesheet only styled the old flat list widget, not the new categorized tree view
+  introduced in 0.3.0.
+- The "What's New" popup didn't appear for users upgrading from a version older than 0.3.0
+  (the first version to have it), since it had no record of what they'd already seen and
+  assumed that meant a brand new install. It now recognizes an existing installation and
+  shows everything they've missed.
+
 ## [0.3.0] - 2026-09-15
 
 ### Fixed
