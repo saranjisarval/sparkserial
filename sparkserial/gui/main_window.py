@@ -4,12 +4,13 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QPushButton, QPlainTextEdit, QLineEdit, QStatusBar,
                              QCheckBox, QSplitter, QTreeWidget, QTreeWidgetItem,
                              QDialog, QFormLayout, QDialogButtonBox, QMessageBox,
-                             QStyle, QStyleOptionButton)
+                             QStyle, QStyleOptionButton, QAbstractItemView)
 from PyQt6.QtCore import Qt, pyqtSlot, QRect
 from PyQt6.QtGui import QIcon, QTextCursor, QPainter, QPen, QColor
 import serial
 from sparkserial.core.serial_manager import SerialManager
 from sparkserial.core.command_manager import CommandManager
+from sparkserial.core import version_info
 from sparkserial.gui.styles import get_stylesheet
 from sparkserial.gui.converter_dialog import ConverterDialog
 import os
@@ -58,6 +59,54 @@ class StyledCheckBox(QCheckBox):
         painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, self.text())
         
         painter.end()
+
+
+class CommandTreeWidget(QTreeWidget):
+    """QTreeWidget for the saved-commands list that lets the user drag a
+    command item onto a different category header (or another command in
+    that category) to re-categorize/reorder it. Category header rows are
+    drop targets only, never draggable themselves.
+
+    Qt's built-in "InternalMove" drag-drop mode doesn't understand the
+    category-header/child structure here (it happily lets a command become
+    a top-level sibling of a category, or a category become a child), so
+    the move is done manually in dropEvent instead of delegating to it.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.setDropIndicatorShown(True)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+
+    def dropEvent(self, event):
+        dragged_item = self.currentItem()
+        if dragged_item is None or dragged_item.parent() is None:
+            # Only individual commands can be dragged, not category headers.
+            event.ignore()
+            return
+
+        pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+        target_item = self.itemAt(pos)
+        if target_item is None:
+            event.ignore()
+            return
+
+        dest_category_item = target_item if target_item.parent() is None else target_item.parent()
+        if dest_category_item is dragged_item.parent():
+            event.ignore()
+            return
+
+        source_category_item = dragged_item.parent()
+        source_category_item.removeChild(dragged_item)
+        dest_category_item.addChild(dragged_item)
+        dest_category_item.setExpanded(True)
+        self.setCurrentItem(dragged_item)
+
+        event.accept()
+        if self.window() is not None and hasattr(self.window(), "on_command_dropped"):
+            self.window().on_command_dropped()
 
 
 class CommandDialog(QDialog):
@@ -159,7 +208,8 @@ class MainWindow(QMainWindow):
         self.serial_manager = SerialManager()
         self.command_manager = CommandManager()
         self.current_worker = None
-        
+        self._category_expanded = {}
+
         self.init_ui()
         self.apply_styles()
         self.refresh_ports()
@@ -255,10 +305,15 @@ class MainWindow(QMainWindow):
         saved_group_layout = QVBoxLayout()
         saved_group_layout.setContentsMargins(10, 15, 10, 10)
         
-        self.commands_list = QTreeWidget()
+        self.commands_list = CommandTreeWidget()
         self.commands_list.setHeaderHidden(True)
         self.commands_list.setIndentation(14)
+        # Native branch arrows don't render reliably once QTreeWidget is
+        # under a custom stylesheet, so the arrow is drawn as text in the
+        # category label itself and toggled by clicking the row instead.
+        self.commands_list.setRootIsDecorated(False)
         self.commands_list.itemDoubleClicked.connect(self.load_saved_command)
+        self.commands_list.itemClicked.connect(self.on_command_tree_item_clicked)
         saved_group_layout.addWidget(self.commands_list)
 
         
@@ -580,14 +635,14 @@ class MainWindow(QMainWindow):
 
     def show_about(self):
         """Show the About dialog with version and author information."""
-        about_text = """
+        about_text = f"""
         <h2>SparkSerial Pro</h2>
-        <p><b>Version:</b> 0.2.1</p>
+        <p><b>Version:</b> {version_info.get_current_version()}</p>
         <p><b>Author:</b> Saravanakumar</p>
         <p><b>Email:</b> sarvalece71@gmail.com</p>
         <hr>
         <p>A lightweight Serial GUI Tool for hardware testing and debugging.</p>
-        <p><b>Note:</b> This tool requires USB-to-Serial drivers to be installed 
+        <p><b>Note:</b> This tool requires USB-to-Serial drivers to be installed
         separately based on your adapter (FTDI, CH340, CP210x, PL2303, etc.).</p>
         <hr>
         <p><b>Technologies:</b> PyQt6, PySerial</p>
@@ -826,6 +881,10 @@ class MainWindow(QMainWindow):
     def clear_terminal(self):
         self.terminal.clear()
 
+    # Role used on category header items to store the plain category name
+    # (the visible text also carries the expand/collapse arrow glyph).
+    CATEGORY_ROLE = Qt.ItemDataRole.UserRole + 1
+
     # Saved Commands Methods
     def refresh_commands_list(self):
         self.commands_list.clear()
@@ -836,13 +895,17 @@ class MainWindow(QMainWindow):
 
             category_item = category_nodes.get(category)
             if category_item is None:
-                category_item = QTreeWidgetItem([category])
+                expanded = self._category_expanded.get(category, True)
+                arrow = "▾" if expanded else "▸"  # ▾ / ▸
+                category_item = QTreeWidgetItem([f"{arrow} {category}"])
+                category_item.setData(0, self.CATEGORY_ROLE, category)
                 font = category_item.font(0)
                 font.setBold(True)
                 category_item.setFont(0, font)
-                # Category headers are not selectable/draggable, just expandable containers
-                category_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                # Category headers are drop targets only, not draggable/selectable.
+                category_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsDropEnabled)
                 self.commands_list.addTopLevelItem(category_item)
+                category_item.setExpanded(expanded)
                 category_nodes[category] = category_item
 
             display_text = f"{cmd['name']} : {cmd['command']}"
@@ -850,9 +913,41 @@ class MainWindow(QMainWindow):
             tooltip = f"Command: {cmd['command']}\nType: {'Hex' if cmd['is_hex'] else 'Text'}\nCategory: {category}"
             item.setToolTip(0, tooltip)
             item.setData(0, Qt.ItemDataRole.UserRole, index)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsDragEnabled)
             category_item.addChild(item)
 
-        self.commands_list.expandAll()
+    def on_command_tree_item_clicked(self, item, column):
+        """Clicking a category header toggles it open/closed."""
+        category = item.data(0, self.CATEGORY_ROLE)
+        if category is None:
+            return  # a command row, not a category header
+
+        expanded = not item.isExpanded()
+        item.setExpanded(expanded)
+        self._category_expanded[category] = expanded
+        arrow = "▾" if expanded else "▸"
+        item.setText(0, f"{arrow} {category}")
+
+    def on_command_dropped(self):
+        """Persist the new order/category after a drag-and-drop move in the
+        saved-commands tree (see CommandTreeWidget.dropEvent)."""
+        commands = self.command_manager.get_commands()
+        new_commands = []
+        root = self.commands_list.invisibleRootItem()
+        for i in range(root.childCount()):
+            category_item = root.child(i)
+            category = category_item.data(0, self.CATEGORY_ROLE) or "General"
+            for j in range(category_item.childCount()):
+                child = category_item.child(j)
+                old_index = child.data(0, Qt.ItemDataRole.UserRole)
+                if old_index is None or not (0 <= old_index < len(commands)):
+                    continue
+                cmd = dict(commands[old_index])
+                cmd['category'] = category
+                new_commands.append(cmd)
+
+        self.command_manager.reorder_commands(new_commands)
+        self.refresh_commands_list()
 
     def _selected_command_index(self):
         """Returns the command_manager index for the currently selected leaf item, or -1 if none/category selected."""

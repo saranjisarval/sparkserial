@@ -146,6 +146,15 @@ def get_stylesheet():
         height: 0px;
     }
 
+    QScrollArea {
+        background-color: transparent;
+        border: none;
+    }
+
+    QScrollArea > QWidget > QWidget {
+        background-color: transparent;
+    }
+
     QListWidget, QTreeWidget {
         background-color: #252526;
         border: 1px solid #3c3c3c;

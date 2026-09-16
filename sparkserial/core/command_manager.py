@@ -105,6 +105,12 @@ class CommandManager:
     def get_commands(self):
         return self.commands
 
+    def reorder_commands(self, new_commands):
+        """Replaces the full command list, e.g. after a drag-and-drop
+        reorder/recategorize in the UI, and persists it."""
+        self.commands = new_commands
+        self.save_commands()
+
     def get_categories(self):
         """Returns a sorted list of unique categories currently in use."""
         categories = {cmd.get("category", "General") for cmd in self.commands}

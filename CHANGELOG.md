@@ -11,6 +11,20 @@ of the release process. See `.claude/skills/pypi-release/SKILL.md`.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-16
+
+### Added
+- Command Shortcuts categories can now be collapsed/expanded by clicking their header
+  (shown with a ▾/▸ arrow), so a long shortcut list is easier to manage.
+- Saved commands can now be dragged and dropped between categories in the Command
+  Shortcuts panel to re-categorize or reorder them.
+
+### Fixed
+- The About dialog showed a stale, hardcoded version number instead of the actually
+  installed version.
+- The "What's New" popup showed a white background with barely-readable text instead of
+  the app's dark theme — its scroll area content widget wasn't covered by the stylesheet.
+
 ## [0.3.1] - 2026-09-15
 
 ### Fixed
