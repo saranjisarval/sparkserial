@@ -4,8 +4,8 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QPushButton, QPlainTextEdit, QLineEdit, QStatusBar,
                              QCheckBox, QSplitter, QTreeWidget, QTreeWidgetItem,
                              QDialog, QFormLayout, QDialogButtonBox, QMessageBox,
-                             QStyle, QStyleOptionButton, QAbstractItemView)
-from PyQt6.QtCore import Qt, pyqtSlot, QRect
+                             QStyle, QStyleOptionButton, QAbstractItemView, QCompleter)
+from PyQt6.QtCore import Qt, pyqtSlot, QRect, QStringListModel
 from PyQt6.QtGui import QIcon, QTextCursor, QPainter, QPen, QColor
 import serial
 from sparkserial.core.serial_manager import SerialManager
@@ -381,10 +381,15 @@ class MainWindow(QMainWindow):
         self.command_input = QComboBox()
         self.command_input.setEditable(True)
         self.command_input.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)  # We handle history manually
-        # Disable the built-in autocomplete popup: its popup steals Up/Down key events
-        # (for navigating suggestions) before they can reach our history-navigation filter.
-        self.command_input.setCompleter(None)
-        self.command_input.lineEdit().setPlaceholderText("Enter command... (↑/↓ for history)")
+        # Autocomplete from sent history + saved command shortcuts. While its popup is
+        # open the completer handles Up/Down itself (to pick a suggestion); otherwise
+        # our eventFilter below keeps Up/Down as history navigation.
+        self.command_completer = QCompleter(QStringListModel(self))
+        self.command_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.command_completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.command_completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        self.command_input.setCompleter(self.command_completer)
+        self.command_input.lineEdit().setPlaceholderText("Enter command... (type to autocomplete, ↑/↓ for history)")
         self.command_input.setMinimumHeight(32)
         self.command_input.setSizePolicy(self.command_input.sizePolicy().horizontalPolicy(), self.command_input.sizePolicy().verticalPolicy())
         # Connect returnPressed from the lineEdit internal widget
@@ -838,6 +843,7 @@ class MainWindow(QMainWindow):
         # Also update the dropdown for visual feedback
         self.command_input.clear()
         self.command_input.addItems(self.command_history)
+        self.update_command_suggestions()
         
         # Reset history navigation and clear input
         self.history_index = -1
@@ -886,7 +892,17 @@ class MainWindow(QMainWindow):
     CATEGORY_ROLE = Qt.ItemDataRole.UserRole + 1
 
     # Saved Commands Methods
+    def update_command_suggestions(self):
+        """Rebuild autocomplete suggestions: recent history first, then saved shortcuts."""
+        suggestions = list(self.command_history)
+        for cmd in self.command_manager.get_commands():
+            text = cmd.get('command', '').strip()
+            if text and text not in suggestions:
+                suggestions.append(text)
+        self.command_completer.model().setStringList(suggestions)
+
     def refresh_commands_list(self):
+        self.update_command_suggestions()
         self.commands_list.clear()
         category_nodes = {}
 

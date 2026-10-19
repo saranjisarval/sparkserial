@@ -11,6 +11,13 @@ of the release process. See `.claude/skills/pypi-release/SKILL.md`.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-19
+
+### Added
+- The command input box now autocompletes: as you type, a popup suggests matching
+  previously sent commands and saved Command Shortcuts (case-insensitive, matches anywhere
+  in the text). Up/Down still navigates sent history when no suggestion popup is open.
+
 ## [0.4.0] - 2026-09-16
 
 ### Added
